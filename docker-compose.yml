@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: meridian-postgres
+    environment:
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+      POSTGRES_DB: platform
+    ports:
+      - "55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    container_name: meridian-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root
+      MONGO_INITDB_DATABASE: crm
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodata:/data/db
+      - ./docker/mongo/init.js:/docker-entrypoint-initdb.d/01-init.js:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "mongodb://root:root@localhost:27017/admin",
+          "--eval",
+          "db.adminCommand('ping').ok",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+
+  backend:
+    profiles: ["app"]
+    build: ./backend
+    container_name: meridian-api
+    ports:
+      - "8000:8000"
+    environment:
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-zY0YPcFcG90fvOS_cFYYJIA_7xOYozDXF5H4xfZI42Q=}
+      PLATFORM_DATABASE_URL: postgresql+psycopg://platform:platform@postgres:5432/platform
+      COMMERCE_ADMIN_URL: postgresql+psycopg://commerce_admin:commerce_admin@postgres:5432/commerce
+      MONGO_ADMIN_URL: mongodb://root:root@mongo:27017/?authSource=admin
+      DEMO_PG_HOST: postgres
+      DEMO_MONGO_HOST: mongo
+      SEED_DEMO_DATA: "true"
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+  frontend:
+    profiles: ["app"]
+    build: ./frontend
+    container_name: meridian-web
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  mongodata:

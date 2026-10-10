@@ -1,0 +1,16 @@
+case_id,customer_id,product_id,opened_date,channel,status
+SC-501,C009,P003,2026-09-03,email,closed
+SC-502,C002,P001,2026-08-19,phone,closed
+SC-503,C005,P006,2026-09-11,chat,open
+SC-504,C001,P007,2026-08-09,email,closed
+SC-505,C010,P004,2026-08-21,phone,closed
+SC-506,C006,P001,2026-09-22,email,open
+SC-507,C004,P004,2026-09-09,chat,closed
+SC-508,C012,P005,2026-08-29,email,closed
+SC-509,C003,P008,2026-08-16,phone,closed
+SC-510,C007,P008,2026-09-06,email,open
+SC-511,C008,P006,2026-09-23,chat,closed
+SC-512,C011,P007,2026-09-13,email,closed
+SC-512,C011,P007,2026-09-13,email,closed
+SC-514,C002,P002,2026-09-25,,closed
+SC-515,C005,P003,2026-09-27,email,
