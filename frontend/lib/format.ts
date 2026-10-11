@@ -37,5 +37,6 @@ export function connectionSummary(config: Record<string, string | number | boole
   const port = config.port ?? "";
   const database = config.database ?? "";
   if (!host) return "File";
-  return `${host}:${port}/${database}`;
+  const srv = config.srv === true || (config.srv == null && String(host).toLowerCase().endsWith(".mongodb.net"));
+  return srv ? `${host}/${database}` : `${host}:${port}/${database}`;
 }

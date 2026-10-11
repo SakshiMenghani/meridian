@@ -17,6 +17,8 @@ from app.schemas import (
     DashboardResponse,
     ImportRequest,
     ImportResponse,
+    LinkCreateRequest,
+    LinkSuggestion,
     MappingResponse,
     McpRegistryResponse,
     MetaResponse,
@@ -24,12 +26,15 @@ from app.schemas import (
     ProfileResponse,
     SampleResult,
     SourceResponse,
+    SuggestionsRequest,
+    SuggestionsResponse,
     TestResponse,
     TransformRequest,
     UpdateSourceRequest,
     UploadResponse,
 )
-from app.services.ask import ask_question
+from app.services.ask import ask_question, suggest_questions
+from app.services.links import create_link, delete_link, suggest_links
 from app.services.transform import import_transform, preview_transform
 from app.services.sources import (
     catalog,
@@ -216,6 +221,28 @@ def post_upload(
 @router.get("/mappings", response_model=list[MappingResponse])
 def get_mappings(db: Session = Depends(get_db)) -> list[MappingResponse]:
     return list_mappings(db)
+
+
+@router.post("/mappings", response_model=MappingResponse, status_code=201)
+def post_mapping(payload: LinkCreateRequest, db: Session = Depends(get_db)) -> MappingResponse:
+    return _guard(lambda: create_link(db, payload))
+
+
+@router.delete("/mappings/{mapping_id}", status_code=204)
+def remove_mapping(mapping_id: str, db: Session = Depends(get_db)) -> None:
+    _guard(lambda: delete_link(db, mapping_id))
+
+
+@router.get("/mappings/suggestions", response_model=list[LinkSuggestion])
+def get_mapping_suggestions(
+    source_ids: list[str] | None = Query(default=None), db: Session = Depends(get_db)
+) -> list[LinkSuggestion]:
+    return _guard(lambda: suggest_links(db, source_ids))
+
+
+@router.post("/suggestions", response_model=SuggestionsResponse)
+def post_suggestions(payload: SuggestionsRequest, db: Session = Depends(get_db)) -> SuggestionsResponse:
+    return _guard(lambda: suggest_questions(db, payload.source_ids))
 
 
 @router.get("/activity", response_model=list[ActivityResponse])

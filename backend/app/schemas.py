@@ -48,6 +48,7 @@ class MongoConfig(BaseModel):
     database: str
     username: str
     auth_source: str = "admin"
+    srv: bool | None = None
 
     @field_validator("host", "database", "username", "auth_source")
     @classmethod
@@ -245,6 +246,7 @@ class ReportSection(BaseModel):
     columns: list[str]
     rows: list[dict]
     chart: ChartSpec | None = None
+    sql: str | None = None
 
 
 class ReportDocument(BaseModel):
@@ -261,6 +263,12 @@ class AskRequest(BaseModel):
     as_report: bool = False
 
 
+class AgentStep(BaseModel):
+    name: str
+    detail: str
+    status: Literal["ok", "error"] = "ok"
+
+
 class AskResponse(BaseModel):
     answer: str
     points: list[str] = []
@@ -269,10 +277,49 @@ class AskResponse(BaseModel):
     columns: list[str]
     rows: list[dict]
     chart: ChartSpec | None = None
-    status: str
+    status: Literal["ok", "needs_clarification", "error"]
     note: str | None = None
     tools_used: list[str] = []
     report: ReportDocument | None = None
+    steps: list[AgentStep] = []
+    options: list[str] = []
+    assumptions: list[str] = []
+    planner: str | None = None
+    truncated: bool = False
+
+
+class LinkCreateRequest(BaseModel):
+    left_source_id: str
+    left_object: str = Field(min_length=1, max_length=120)
+    left_field: str = Field(min_length=1, max_length=120)
+    right_source_id: str
+    right_object: str = Field(min_length=1, max_length=120)
+    right_field: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=240)
+
+
+class LinkSuggestion(BaseModel):
+    left_source_id: str
+    left_source_name: str
+    left_object: str
+    left_field: str
+    right_source_id: str
+    right_source_name: str
+    right_object: str
+    right_field: str
+    overlap: float
+    shared_values: int
+    examples: list[str] = []
+
+
+class SuggestionsRequest(BaseModel):
+    source_ids: list[str] | None = None
+
+
+class SuggestionsResponse(BaseModel):
+    questions: list[str]
+    generated_by: str
+    tables: list[dict] = []
 
 
 class McpToolResponse(BaseModel):

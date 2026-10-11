@@ -87,20 +87,20 @@ FastAPI
 
 A connector is registered by source type. Adding Salesforce or Snowflake later means a new adapter module plus a registry entry. The API routes, chat page, and federation service stay as they are.
 
-### Request path for a future natural-language question
+### Request path for a natural-language question
 
 ```text
-question
-  -> load enabled sources, live catalogs, confirmed mappings
-  -> planner chooses sources
-  -> stop and ask if a join key is ambiguous or a metric is undefined
-  -> emit one read-only query per source (SQL, Mongo filter, or GAQL)
-  -> validate names, read-only mode, limit, timeout
-  -> execute independent reads in parallel
-  -> load frames into DuckDB
-  -> run a federation query that only joins confirmed mappings
-  -> write the answer from those rows
-  -> return answer, sources, generated queries, table, chart spec, status
+question + selected sources
+  -> workspace: read each table through MCP into a DuckDB frame (5,000 rows max)
+  -> profile: columns, types, value lists, date ranges, row counts
+  -> plan (LLM, or offline embeddings): query | report | describe | clarify
+  -> clarify: stop and return the question with 2-4 options
+  -> guard: one SELECT, known tables, no table functions,
+            cross-source joins only on a confirmed link in a top-level AND
+  -> run: DuckDB with external access off and configuration locked
+  -> on rejection or error: back to plan with the error (2 retries)
+  -> answer from the rows; numbers not in the rows are rejected
+  -> return answer, sections, SQL, chart spec, steps, assumptions, status
 ```
 
 The chart spec is data (`bar` or `line`, plus category and value fields). The UI renders it. The model does not emit JavaScript.
@@ -135,6 +135,13 @@ db-mcp-agent/
       security.py              # Fernet, error scrubbing
       identifiers.py
       api/routes.py
+      agent/
+        workspace.py           # load sources through MCP into DuckDB frames
+        profile.py             # generic table profiles
+        planner.py             # LLM and offline planners
+        guard.py               # SQL checks and locked-down DuckDB execution
+        graph.py               # LangGraph flow
+        answer.py              # answer writing with the number check
       connectors/
         postgres.py
         mongo.py
@@ -159,15 +166,12 @@ Planned later:
 ```text
 backend/app/mcp/client_manager.py
 backend/app/mcp/google_ads_sample.py
-backend/app/agent/graph.py
-backend/app/agent/validator.py
-backend/app/federation/duckdb.py
 backend/app/imports/approve.py
 ```
 
 ## 5. API and connector interfaces
 
-Base URL: `http://localhost:8000/api`
+Base URL: `http://localhost:8010/api`
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -184,10 +188,15 @@ Base URL: `http://localhost:8000/api`
 | GET | `/sources/{id}/sample` | Read-only sample. `limit` max 100 |
 | GET | `/sources/{id}/profile` | Spreadsheet types, nulls, duplicate rows, suggested DDL |
 | POST | `/uploads` | `.csv` or `.xlsx`, max 8 MB. Registers a spreadsheet source |
-| GET | `/mappings` | Confirmed cross-source field mappings |
+| GET | `/mappings` | Confirmed cross-source links |
+| POST | `/mappings` | Confirm a link between two columns |
+| DELETE | `/mappings/{id}` | Remove a link |
+| GET | `/mappings/suggestions` | Candidate links found by comparing column values across sources |
+| POST | `/suggestions` | Starter questions generated from the selected sources' profiles |
 | GET | `/activity` | Access log |
 | GET | `/mcp/tools` | In-process MCP tools and registered servers |
-| POST | `/ask` | Natural-language question against selected sources |
+| POST | `/ask` | Natural-language question against selected sources. Returns the answer, sections, SQL, chart spec, steps, assumptions, and clarification options |
+| POST | `/report` | Same flow in report mode: two to four charted sections |
 
 Connector contract used by the service layer:
 
@@ -339,15 +348,19 @@ Ambiguous case: two mappings can relate "customer" (email and `customer_id`). Th
 - [x] MCP client manager (`mcp` 2.3) and in-process read-only tools for Postgres, MongoDB, and spreadsheets
 - [x] Local text-to-SQL schema linking with `BAAI/bge-small-en-v1.5`. The embedding model picks the table and columns. DuckDB still runs the read-only query
 - [x] Optional OpenAI writer (`gpt-4o-mini`) that rephrases the answer from query rows. Numbers are rejected if they were not in those rows
-- [ ] LangGraph flow: select sources, clarify, plan, validate, execute, federate, answer
-- [ ] DuckDB federation that rejects unmapped joins
+- [x] LangGraph flow: profile, plan, clarify, check, run, retry, answer (`agent/graph.py`)
+- [x] DuckDB federation that rejects unmapped joins (`agent/guard.py`)
+- [x] LLM planner that works from a generated data profile, with no per-dataset glossary
+- [x] Links page with value-overlap suggestions, confirm, and remove
+- [x] Multi-source questions, clarification options, and a step-by-step "How I answered" trail
 - [x] Chat page with the answer, the queries, the sources, the table, and status
 - [x] Query log entries on the existing activity feed
 
 ### Phase 3 — Google Ads
 
 - [x] Synthetic campaign dataset and MCP adapter with `data_origin: sample`
-- [ ] Campaign questions and one Postgres-plus-ads comparison using an explicit mapping
+- [x] Campaign questions answered from the generic planner
+- [ ] Postgres-plus-ads comparison (needs a link between orders and campaigns, which the sample data does not have)
 - [x] Registration path for the official Google Ads MCP server, left unwired until credentials exist
 
 ### Phase 4 — Transformation
@@ -358,7 +371,8 @@ Ambiguous case: two mappings can relate "customer" (email and `customer_id`). Th
 
 ### Phase 5 — Polish
 
-- [ ] Bar and line charts from the chart spec
+- [x] Bar, line, and pie charts from the chart spec, with downloadable HTML reports
+- [ ] Push queries down to the source databases instead of loading up to 5,000 rows per table
 - [ ] Clearer query errors and timeouts
 - [ ] Integration tests against the Compose databases
 - [ ] Alembic migrations once the metadata schema needs to change in place
@@ -368,4 +382,4 @@ Ambiguous case: two mappings can relate "customer" (email and `customer_id`). Th
 - Synchronous SQLAlchemy and PyMongo behind FastAPI. The connectors are blocking and the local concurrency is low. Async can wrap the same registry later.
 - `create_all` for the metadata tables. Alembic waits until there is a schema to migrate.
 - Demo data loads on API startup when `SEED_DEMO_DATA=true`. Re-running startup does not duplicate rows.
-- The UI talks to the API on `http://localhost:8000`. That URL is what the browser uses even when the API container is on the Compose network.
+- The UI talks to the API on `http://localhost:8010`. That URL is what the browser uses even when the API container is on the Compose network.
