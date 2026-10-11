@@ -12,13 +12,24 @@ from app.security import json_safe
 COLLECTION = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 
 
+def uses_srv(config: dict) -> bool:
+    if config.get("srv") is not None:
+        return bool(config["srv"])
+    return str(config.get("host", "")).lower().endswith(".mongodb.net")
+
+
 def mongo_uri(source: ResolvedSource) -> str:
     username = quote_plus(source.config["username"])
     password = quote_plus(source.secret or "")
     host = source.config["host"]
-    port = int(source.config["port"])
     database = quote_plus(source.config["database"])
     auth_source = quote_plus(source.config.get("auth_source") or source.config["database"])
+    if uses_srv(source.config):
+        return (
+            f"mongodb+srv://{username}:{password}@{host}/{database}"
+            f"?authSource={auth_source}&retryWrites=true&serverSelectionTimeoutMS=10000"
+        )
+    port = int(source.config["port"])
     return (
         f"mongodb://{username}:{password}@{host}:{port}/{database}"
         f"?authSource={auth_source}&serverSelectionTimeoutMS=5000"
@@ -26,7 +37,24 @@ def mongo_uri(source: ResolvedSource) -> str:
 
 
 def _client(source: ResolvedSource) -> MongoClient:
-    return MongoClient(mongo_uri(source), serverSelectionTimeoutMS=5000)
+    timeout = 10000 if uses_srv(source.config) else 5000
+    return MongoClient(mongo_uri(source), serverSelectionTimeoutMS=timeout)
+
+
+def _explain(exc: PyMongoError, config: dict) -> str:
+    message = str(exc)
+    host = config.get("host", "")
+    if "nodename nor servname" in message or "Name or service not known" in message or "DNS" in message:
+        if uses_srv(config):
+            return f"Could not resolve the Atlas cluster {host}. Check the cluster address and that this machine has internet access."
+        return f"Could not find host {host}. For MongoDB Atlas, turn on the SRV option and use the cluster address."
+    if "Authentication failed" in message or "bad auth" in message:
+        return "MongoDB rejected the username or password. For Atlas users, the auth database is usually admin."
+    if uses_srv(config) and ("timed out" in message or "SSL" in message or "TLS" in message):
+        return (
+            f"Timed out reaching {host}. In Atlas, open Network Access and allow this machine's IP address."
+        )
+    return message
 
 
 class MongoConnector:
@@ -40,7 +68,7 @@ class MongoConnector:
             database.list_collection_names()
             return f"Connected to {source.config['database']} on {source.config['host']}."
         except PyMongoError as exc:
-            raise ConnectorError(str(exc)) from exc
+            raise ConnectorError(_explain(exc, source.config)) from exc
         finally:
             client.close()
 
@@ -76,7 +104,7 @@ class MongoConnector:
                 )
             return objects
         except PyMongoError as exc:
-            raise ConnectorError(str(exc)) from exc
+            raise ConnectorError(_explain(exc, source.config)) from exc
         finally:
             client.close()
 
@@ -107,7 +135,7 @@ class MongoConnector:
                         columns.append(key)
             return SampleResult(columns=columns, rows=rows, row_count=len(rows), truncated=truncated)
         except PyMongoError as exc:
-            raise ConnectorError(str(exc)) from exc
+            raise ConnectorError(_explain(exc, source.config)) from exc
         finally:
             client.close()
 

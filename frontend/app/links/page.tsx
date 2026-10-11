@@ -10,7 +10,8 @@ type Side = { sourceId: string; object: string; field: string };
 const EMPTY: Side = { sourceId: "", object: "", field: "" };
 
 export default function LinksPage() {
-  const [links, setLinks] = useState<Mapping[]>([]);
+  const [links, setLinks] = useState<Mapping[] | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [suggestions, setSuggestions] = useState<LinkSuggestion[] | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -65,20 +66,53 @@ export default function LinksPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       <PageHeader
-        eyebrow="Links"
-        title="Connect your sources"
+        eyebrow="Your data"
+        title="Links between sources"
         description="A link tells Meridian that two columns in different sources mean the same thing, like a customer ID in your store database and in your CRM. Questions that combine sources only ever join on links you confirmed here."
       />
       {error ? <p className="mb-4 rounded-xl bg-bad/10 px-4 py-3 text-sm text-bad">{error}</p> : null}
+
+      <section className="card mb-8">
+        <header className="border-b border-line px-5 py-4">
+          <h2 className="font-display text-2xl">Confirmed links</h2>
+          <p className="text-sm text-muted">
+            {links === null ? "Loading…" : `${links.length} in use. Questions that combine sources join only on these.`}
+          </p>
+        </header>
+        <ul>
+          {links === null ? <li className="m-4 h-10 animate-pulse rounded-xl bg-paper" /> : null}
+          {(links ?? []).map((link) => (
+            <li key={link.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-3.5 last:border-b-0">
+              <div className="min-w-0">
+                <Pair
+                  left={[link.left_source_name, link.left_object, link.left_field]}
+                  right={[link.right_source_name, link.right_object, link.right_field]}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => remove(link.id)}
+                disabled={saving === link.id}
+                className="btn btn-ghost btn-sm hover:!bg-bad/5 hover:!text-bad"
+              >
+                <Trash2 size={13} /> Remove
+              </button>
+            </li>
+          ))}
+          {links?.length === 0 ? (
+            <li className="px-5 py-6 text-sm text-muted">No links yet. Confirm a suggestion below, or add one yourself.</li>
+          ) : null}
+        </ul>
+      </section>
 
       <section className="mb-8">
         <div className="mb-3 flex items-center gap-2">
           <Sparkles size={16} className="text-tide" />
           <h2 className="font-display text-2xl">Suggested links</h2>
         </div>
-        <p className="mb-4 text-sm text-muted">Found by comparing the actual values in each column. Confirm only the ones that are true.</p>
+        <p className="mb-4 text-sm text-muted">Found by comparing the real values in each column. Confirm only the pairs that truly mean the same thing.</p>
         {suggestions === null ? (
           <div className="flex items-center gap-2 rounded-2xl border border-line bg-panel px-4 py-4 text-sm text-muted">
             <Loader2 size={14} className="animate-spin text-tide" /> Comparing columns across sources…
@@ -88,11 +122,12 @@ export default function LinksPage() {
             No new matches found. Add a link below if you know two columns match.
           </p>
         ) : (
+          <>
           <ul className="grid gap-3 md:grid-cols-2">
-            {suggestions.map((item) => {
+            {(showAll ? suggestions : suggestions.slice(0, 6)).map((item) => {
               const key = `${item.left_source_id}.${item.left_object}.${item.left_field}-${item.right_source_id}.${item.right_object}.${item.right_field}`;
               return (
-                <li key={key} className="flex flex-col rounded-2xl border border-line bg-panel p-4">
+                <li key={key} className="card flex flex-col p-4">
                   <Pair
                     left={[item.left_source_name, item.left_object, item.left_field]}
                     right={[item.right_source_name, item.right_object, item.right_field]}
@@ -103,7 +138,7 @@ export default function LinksPage() {
                     </div>
                     <span className="text-xs text-muted">{Math.round(item.overlap * 100)}% match</span>
                   </div>
-                  <p className="mt-2 text-xs text-muted">
+                  <p className="mt-2 truncate text-xs text-muted" title={item.examples.join(", ")}>
                     {item.shared_values} shared values, for example {item.examples.join(", ")}
                   </p>
                   <button
@@ -116,7 +151,7 @@ export default function LinksPage() {
                         key,
                       )
                     }
-                    className="mt-4 flex w-fit items-center gap-1.5 rounded-full bg-tide px-3 py-1.5 text-xs font-semibold text-white"
+                    className="btn btn-primary btn-sm mt-4 w-fit"
                   >
                     <Check size={13} /> Confirm link
                   </button>
@@ -124,36 +159,13 @@ export default function LinksPage() {
               );
             })}
           </ul>
+          {suggestions.length > 6 ? (
+            <button type="button" onClick={() => setShowAll((value) => !value)} className="btn btn-secondary btn-sm mt-3">
+              {showAll ? "Show fewer" : `Show all ${suggestions.length} suggestions`}
+            </button>
+          ) : null}
+          </>
         )}
-      </section>
-
-      <section className="mb-8 rounded-3xl border border-line bg-panel">
-        <header className="border-b border-line px-5 py-4">
-          <h2 className="font-display text-2xl">Confirmed links</h2>
-          <p className="text-sm text-muted">{links.length} in use for questions that combine sources.</p>
-        </header>
-        <ul>
-          {links.map((link) => (
-            <li key={link.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 last:border-b-0">
-              <div className="min-w-0">
-                <Pair
-                  left={[link.left_source_name, link.left_object, link.left_field]}
-                  right={[link.right_source_name, link.right_object, link.right_field]}
-                />
-                <p className="mt-1 text-xs text-muted">{link.description}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => remove(link.id)}
-                disabled={saving === link.id}
-                className="flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-bad hover:border-bad"
-              >
-                <Trash2 size={13} /> Remove
-              </button>
-            </li>
-          ))}
-          {links.length === 0 ? <li className="px-5 py-6 text-sm text-muted">No links yet.</li> : null}
-        </ul>
       </section>
 
       <ManualLink sources={sources} saving={saving === "manual"} onSave={(left, right) => confirm(left, right, "manual")} />
@@ -176,9 +188,8 @@ function Field({ parts }: { parts: string[] }) {
   return (
     <span className="rounded-xl bg-paper px-2.5 py-1">
       <span className="text-xs text-muted">{source} · </span>
-      <span className="font-semibold">
-        {object}.{field}
-      </span>
+      <span className="font-semibold">{object}</span>
+      <span className="text-muted">.{field}</span>
     </span>
   );
 }
@@ -197,7 +208,7 @@ function ManualLink({
   const ready = [left, right].every((side) => side.sourceId && side.object && side.field);
 
   return (
-    <section className="rounded-3xl border border-line bg-panel p-5">
+    <section className="card p-5">
       <div className="flex items-center gap-2">
         <Plus size={16} className="text-tide" />
         <h2 className="font-display text-2xl">Add a link yourself</h2>
@@ -212,7 +223,7 @@ function ManualLink({
         type="button"
         disabled={!ready || saving}
         onClick={() => onSave(left, right)}
-        className="mt-4 rounded-full bg-tide px-4 py-2 text-sm font-semibold text-white"
+        className="btn btn-primary mt-4"
       >
         {saving ? "Saving…" : "Save link"}
       </button>
@@ -234,7 +245,7 @@ function SidePicker({ sources, value, onChange }: { sources: Source[]; value: Si
   }, [value.sourceId]);
 
   const columns = useMemo(() => objects.find((item) => item.name === value.object)?.columns ?? [], [objects, value.object]);
-  const select = "w-full rounded-xl border border-line bg-paper px-3 py-2 text-sm";
+  const select = "input mt-0";
 
   return (
     <div className="grid gap-2">

@@ -167,3 +167,19 @@ def test_blank_header_is_rejected():
         assert "header" in str(exc).lower()
         return
     raise AssertionError("blank header was accepted")
+
+
+def test_mongo_atlas_hosts_use_srv():
+    from app.connectors.base import ResolvedSource
+    from app.connectors.mongo import mongo_uri
+
+    def uri(**config):
+        base = {"host": "localhost", "port": 27017, "database": "crm", "username": "reader", "auth_source": "admin"}
+        return mongo_uri(ResolvedSource(id="x", name="x", source_type="mongodb", config={**base, **config}, secret="p@ss"))
+
+    atlas = uri(host="cluster0.abcde.mongodb.net")
+    assert atlas.startswith("mongodb+srv://reader:p%40ss@cluster0.abcde.mongodb.net/crm?")
+    assert ":27017" not in atlas
+    assert uri().startswith("mongodb://reader:p%40ss@localhost:27017/crm?")
+    assert uri(host="db.internal", srv=True).startswith("mongodb+srv://")
+    assert uri(host="cluster0.abcde.mongodb.net", srv=False).startswith("mongodb://")

@@ -21,7 +21,7 @@ export function AnswerCard({ result, onAsk }: { result: AskResult; onAsk?: (ques
 
   return (
     <div
-      className={`max-w-3xl rounded-3xl border bg-panel p-5 shadow-[0_1px_0_rgba(28,36,48,0.04),0_12px_32px_-20px_rgba(28,36,48,0.35)] ${
+      className={`w-full rounded-3xl border bg-panel p-5 shadow-(--shadow-card) ${
         clarifying ? "border-warn/40" : failed ? "border-bad/40" : "border-line"
       }`}
     >

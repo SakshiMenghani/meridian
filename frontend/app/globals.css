@@ -15,6 +15,7 @@
   --color-good: #1c7a4d;
   --color-bad: #9d2c2c;
   --color-warn: #8a5a12;
+  --shadow-card: 0 1px 0 rgba(28, 36, 48, 0.04), 0 10px 30px -22px rgba(28, 36, 48, 0.45);
 }
 
 body {
@@ -22,7 +23,49 @@ body {
   color: var(--color-ink);
 }
 
-button:disabled {
+button:disabled,
+a[aria-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-tide);
+  outline-offset: 2px;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold whitespace-nowrap transition;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+  .btn-primary {
+    @apply bg-tide text-white hover:bg-tide-deep;
+  }
+  .btn-secondary {
+    @apply border border-line bg-panel text-ink hover:border-tide/50 hover:text-tide-deep;
+  }
+  .btn-danger {
+    @apply border border-line bg-panel text-bad hover:border-bad/40 hover:bg-bad/5;
+  }
+  .btn-ghost {
+    @apply text-muted hover:bg-ink/5 hover:text-ink;
+  }
+  .card {
+    @apply rounded-2xl border border-line bg-panel shadow-(--shadow-card);
+  }
+  .field-label {
+    @apply block text-sm font-medium text-ink;
+  }
+  .field-hint {
+    @apply mt-1 block text-xs leading-5 text-muted;
+  }
+  .input {
+    @apply mt-1.5 w-full rounded-xl border border-line bg-white px-3 py-2.5 text-sm text-ink transition outline-none placeholder:text-muted/60 focus:border-tide focus:ring-4 focus:ring-tide/10 disabled:bg-paper disabled:text-muted;
+  }
+  .eyebrow {
+    @apply text-xs font-semibold tracking-[0.16em] text-tide uppercase;
+  }
 }

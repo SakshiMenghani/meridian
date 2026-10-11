@@ -196,7 +196,7 @@ def update_source(db: Session, source_id: str, payload: UpdateSourceRequest) -> 
         source_id=source.id,
         action="update",
         status="ok",
-        detail="Enabled." if source.enabled else "Disabled.",
+        detail=("Enabled." if source.enabled else "Disabled.") if payload.enabled is not None else "Renamed.",
     )
     db.commit()
     return to_source(source)

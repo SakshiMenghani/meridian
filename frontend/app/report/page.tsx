@@ -1,5 +1,6 @@
 "use client";
 
+import { BarChart3, Download, FileText, LayoutGrid, Loader2, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DataTable } from "@/components/data-table";
 import { AnswerCard } from "@/components/answer-card";
@@ -11,15 +12,15 @@ import { downloadReport } from "@/lib/report-html";
 import type { AskResult, ChartSpec, Source } from "@/lib/types";
 
 const TEMPLATES = [
-  "Give me an overview report of this data: the biggest groups, the top items, and the trend over time.",
-  "Write a performance report comparing the most important measures by category.",
-  "Make a monthly trend report with the main changes.",
+  { title: "Overview", icon: LayoutGrid, text: "Give me an overview report of this data: the biggest groups, the top items, and the trend over time." },
+  { title: "Performance", icon: BarChart3, text: "Write a performance report comparing the most important measures by category." },
+  { title: "Monthly trend", icon: TrendingUp, text: "Make a monthly trend report with the main changes." },
 ];
 
 export default function ReportPage() {
-  const [sources, setSources] = useState<Source[]>([]);
+  const [sources, setSources] = useState<Source[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
-  const [question, setQuestion] = useState(TEMPLATES[0]);
+  const [question, setQuestion] = useState(TEMPLATES[0].text);
   const [result, setResult] = useState<AskResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,47 +58,73 @@ export default function ReportPage() {
         title="Build a report"
         description="Describe the report you need. Meridian plans two to four views of your data, each with a chart and its table, and you can download the whole thing as a single HTML file."
       />
-      <form onSubmit={generate} className="mb-8 rounded-3xl border border-line bg-panel p-5">
-        <p className="mb-2 text-xs font-semibold text-muted">Build from</p>
-        <SourcePicker sources={sources} selected={selected} onChange={setSelected} />
-        <p className="mt-5 mb-2 text-xs font-semibold text-muted">Start from a template, or describe the report you want</p>
-        <div className="flex flex-wrap gap-2">
-          {TEMPLATES.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setQuestion(item)}
-              className="rounded-full bg-paper px-3 py-1.5 text-left text-sm"
-            >
-              {item}
-            </button>
-          ))}
+      <form onSubmit={generate} className="card mb-8 space-y-5 p-6">
+        <div>
+          <p className="field-label">1. Pick a starting point</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+            {TEMPLATES.map((item) => {
+              const Icon = item.icon;
+              const active = question === item.text;
+              return (
+                <button
+                  key={item.title}
+                  type="button"
+                  onClick={() => setQuestion(item.text)}
+                  aria-pressed={active}
+                  className={`rounded-2xl border p-4 text-left transition ${
+                    active ? "border-tide bg-tide/5 ring-4 ring-tide/10" : "border-line hover:border-tide/40"
+                  }`}
+                >
+                  <Icon size={18} className="text-tide" />
+                  <span className="mt-2 block text-sm font-semibold">{item.title}</span>
+                  <span className="mt-1 block text-xs leading-5 text-muted">{item.text}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <textarea
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          className="mt-4 min-h-24 w-full rounded-2xl border border-line bg-paper px-4 py-3 text-sm"
-        />
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button type="submit" disabled={busy} className="rounded-full bg-tide px-4 py-2 text-sm font-semibold text-white">
-            {busy ? "Building report…" : "Generate report"}
-          </button>
-          {result ? (
-            <button type="button" onClick={() => downloadReport(result)} className="rounded-full border border-line px-4 py-2 text-sm font-semibold">
-              Download HTML
+        <label className="block">
+          <span className="field-label">2. Describe the report in your own words</span>
+          <textarea
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            rows={3}
+            className="input resize-y leading-6"
+            placeholder="For example: compare ad spend and conversions by campaign for September"
+          />
+        </label>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5">
+          {sources ? <SourcePicker sources={sources} selected={selected} onChange={setSelected} /> : <span className="h-9 w-48 animate-pulse rounded-full bg-paper" />}
+          <div className="flex flex-wrap gap-2">
+            {result ? (
+              <button type="button" onClick={() => downloadReport(result)} className="btn btn-secondary">
+                <Download size={14} /> Download HTML
+              </button>
+            ) : null}
+            <button type="submit" disabled={busy || question.trim().length < 3} className="btn btn-primary">
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <FileText size={15} />}
+              {busy ? "Building report…" : "Generate report"}
             </button>
-          ) : null}
+          </div>
         </div>
-        {error ? <p className="mt-3 text-sm text-bad">{error}</p> : null}
+        {error ? <p className="rounded-xl bg-bad/10 px-4 py-3 text-sm text-bad">{error}</p> : null}
       </form>
 
-      {result && !result.report ? (
+      {busy ? (
+        <div className="space-y-4" aria-live="polite">
+          <div className="h-36 animate-pulse rounded-3xl bg-tide/15" />
+          <div className="h-64 animate-pulse rounded-3xl bg-panel" />
+          <p className="text-sm text-muted">Planning the views, running each query and writing the summary. This usually takes 10–30 seconds.</p>
+        </div>
+      ) : null}
+
+      {result && !result.report && !busy ? (
         <div className="mb-8">
           <AnswerCard result={result} onAsk={(text) => setQuestion(text)} />
         </div>
       ) : null}
 
-      {result?.report ? (
+      {result?.report && !busy ? (
         <article className="space-y-6">
           <header className="rounded-3xl bg-tide px-6 py-8 text-white">
             <p className="text-xs tracking-[0.16em] uppercase text-white/70">Report</p>
@@ -112,7 +139,7 @@ export default function ReportPage() {
               ? { ...section.chart, type: kinds[index] ?? section.chart.type }
               : null;
             return (
-              <section key={section.title} className="rounded-3xl border border-line bg-panel p-6">
+              <section key={section.title} className="card p-6">
                 <h3 className="font-display text-2xl">{section.title}</h3>
                 <p className="mt-2 text-sm text-muted">{section.body}</p>
                 {chart ? (

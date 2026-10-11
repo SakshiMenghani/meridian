@@ -48,6 +48,7 @@ class MongoConfig(BaseModel):
     database: str
     username: str
     auth_source: str = "admin"
+    srv: bool | None = None
 
     @field_validator("host", "database", "username", "auth_source")
     @classmethod

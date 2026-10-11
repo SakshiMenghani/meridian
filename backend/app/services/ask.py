@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
@@ -16,7 +17,9 @@ __all__ = ["LoadedTable", "ask_question", "suggest_questions"]
 
 SUGGEST_SYSTEM = """You suggest starter questions for a data assistant used by non-technical people.
 You receive descriptions of tables loaded from the user's own data and the confirmed links between sources.
-Write 6 short, specific questions that this data can answer with numbers, using the real table, column, and value names in plain words.
+Write 6 short, specific questions that this data can answer with numbers, using real column values where they help.
+Write the way a business person talks: say "customers", "orders", "website sessions", or "ad campaigns", never a table name,
+a column name with underscores, an ID, or the words "table", "column", or "field". Keep each question under 90 characters.
 Include at least one trend over time when a date column exists, and one question that combines two sources when a confirmed link exists.
 Return JSON: {"questions": ["...", "..."]}"""
 
@@ -39,7 +42,7 @@ def ask_question(db: Session, payload: AskRequest) -> AskResponse:
     )
     plan = state.get("plan")
     sections = state.get("sections") or []
-    used = sorted({table.source_name for table in tables})
+    used = _sources_queried(tables, sections) or sorted({table.source_name for table in tables})
     first = sections[0] if sections else None
     report = None
     if plan is not None and sections and (plan.action == "report" or len(sections) > 1):
@@ -99,6 +102,11 @@ def suggest_questions(db: Session, source_ids: list[str] | None) -> SuggestionsR
         if questions:
             return SuggestionsResponse(questions=questions[:6], generated_by=model_name(), tables=summary)
     return SuggestionsResponse(questions=starter_questions(profiles, links), generated_by="data profile", tables=summary)
+
+
+def _sources_queried(tables: list[LoadedTable], sections: list[dict]) -> list[str]:
+    sql = " ".join(item.get("sql") or "" for item in sections).lower()
+    return sorted({table.source_name for table in tables if re.search(rf"\b{re.escape(table.sql_name.lower())}\b", sql)})
 
 
 def _chart(section: dict | None) -> ChartSpec | None:
