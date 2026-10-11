@@ -19,6 +19,22 @@ def test_secret_round_trip_and_scrub():
     assert "s3cret" not in scrub_text("login failed for s3cret", ["s3cret"])
 
 
+def test_rotated_secret_reads_with_new_key_only():
+    from app.security import rotate_secret
+
+    old = Fernet.generate_key().decode()
+    new = Fernet.generate_key().decode()
+    token = encrypt_secret("commerce_reader", old)
+    assert decrypt_secret(token, new, [old]) == "commerce_reader"
+    rotated = rotate_secret(token, new, [old])
+    assert decrypt_secret(rotated, new) == "commerce_reader"
+    try:
+        decrypt_secret(rotated, old)
+    except ValueError:
+        return
+    raise AssertionError("old key still decrypts the rotated secret")
+
+
 def test_quote_ident_rejects_injection():
     assert quote_ident("customers") == '"customers"'
     try:
@@ -123,21 +139,24 @@ def test_import_requires_confirmation():
 
 
 def test_loan_question_plans_a_ranked_select():
-    from app.services.ask import LoadedTable, plan_sql
+    from app.agent.embeddings import HashEmbedder
+    from app.agent.text_to_sql import link_question
+    from app.agent.workspace import LoadedTable
 
+    frame = pd.DataFrame({"loan_type": ["home", "auto", "student"], "total_applications": [40, 75, 12]})
     tables = [
         LoadedTable(
             sql_name="loan_chart",
             source_name="Loan file",
             object_name="loan_chart",
             columns=[("loan_type", "text"), ("total_applications", "bigint")],
-            frame=pd.DataFrame(),
+            frame=frame,
         )
     ]
-    sql = plan_sql("Which loan type had the most applications?", tables)
-    assert "ORDER BY" in sql
-    assert "total_applications" in sql
-    assert "DESC" in sql
+    link = link_question("Which loan type had the most applications?", tables, HashEmbedder())
+    assert "ORDER BY" in link.sql
+    assert "total_applications" in link.sql
+    assert "DESC" in link.sql
 
 
 def test_blank_header_is_rejected():

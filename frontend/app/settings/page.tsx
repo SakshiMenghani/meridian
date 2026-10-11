@@ -33,8 +33,14 @@ export default function SettingsPage() {
           <Row label="Phase" value={meta.phase} />
           <Row label="API" value={apiBase} />
           <Row label="Demo seed" value={meta.seed_demo_data ? "On" : "Off"} />
-          <Row label="OpenAI key" value={meta.openai_configured ? "Present" : "Not configured"} />
-          <Row label="Answer LLM" value={meta.openai_configured ? meta.openai_model : "Not configured. Answers are still written from the query rows."} />
+          <Row
+            label="OpenAI key"
+            value={meta.openai_configured ? "Present" : "Not configured. Set OPENAI_API_KEY in the .env file next to docker-compose.yml, then restart the API."}
+          />
+          <Row
+            label="Question planner"
+            value={meta.openai_configured ? `${meta.openai_model} plans the SQL; every query is checked before it runs.` : "Offline planner for simple questions."}
+          />
           <Row label="Upload limit" value={`${meta.upload_limit_mb} MB`} />
           <Row label="Connectors" value={meta.supported_sources.join(", ")} />
           <Row label="Text-to-SQL embeddings" value={meta.embedding_model} />

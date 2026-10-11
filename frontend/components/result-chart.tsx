@@ -93,7 +93,7 @@ export function ResultChart({
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full rounded-xl bg-paper" role="img" aria-label={spec.title}>
         {values.map((item, index) => {
           const y = 12 + index * 36;
-          const bar = ((right - left - 8) * item.value) / max;
+          const bar = ((right - left - 64) * item.value) / max;
           return (
             <g key={`${item.label}-${index}`}>
               <text x={left - 8} y={y + 14} textAnchor="end" className="fill-ink" fontSize="12">

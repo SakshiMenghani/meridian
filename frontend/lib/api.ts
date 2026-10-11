@@ -1,4 +1,4 @@
-export const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, {
@@ -28,6 +28,9 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
       message = response.statusText;
     }
     throw new Error(message || "Request failed.");
+  }
+  if (response.status === 204) {
+    return undefined as T;
   }
   return response.json() as Promise<T>;
 }

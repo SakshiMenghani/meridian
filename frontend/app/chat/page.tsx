@@ -1,310 +1,238 @@
 "use client";
 
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Database, KeyRound, Link2, Loader2, MessageSquareText, RefreshCw } from "lucide-react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
-import { DataTable } from "@/components/data-table";
-import { ResultChart } from "@/components/result-chart";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { AnswerCard } from "@/components/answer-card";
+import { SourcePicker } from "@/components/source-picker";
 import { api } from "@/lib/api";
-import { sourceLabel } from "@/lib/format";
-import { downloadReport } from "@/lib/report-html";
-import type { AskResult, CatalogObject, ChartSpec, Source } from "@/lib/types";
-
-type View = "chart" | "table" | "sql" | null;
+import type { AskResult, Meta, Source, Suggestions } from "@/lib/types";
 
 type Turn = {
   question: string;
   result?: AskResult;
   error?: string;
-  view: View;
-  chartType?: ChartSpec["type"];
 };
+
+const THINKING = ["Reading your data…", "Planning the query…", "Checking the SQL…", "Running it…", "Writing the answer…"];
 
 function ChatWorkspace() {
   const search = useSearchParams();
   const preset = search.get("source");
-  const [sources, setSources] = useState<Source[]>([]);
-  const [sourceId, setSourceId] = useState(preset ?? "");
-  const [objects, setObjects] = useState<CatalogObject[]>([]);
+  const [sources, setSources] = useState<Source[] | null>(null);
+  const [selected, setSelected] = useState<string[]>(preset ? [preset] : []);
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestions | null>(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api<Source[]>("/api/sources")
-      .then((rows) => {
-        setSources(rows);
-        setSourceId((current) => current || preset || rows.find((row) => row.enabled)?.id || "");
-      })
-      .catch(() => setSources([]));
-  }, [preset]);
+    api<Source[]>("/api/sources").then(setSources).catch(() => setSources([]));
+    api<Meta>("/api/meta").then(setMeta).catch(() => setMeta(null));
+  }, []);
+
+  const loadSuggestions = useCallback(() => {
+    setLoadingSuggestions(true);
+    api<Suggestions>("/api/suggestions", {
+      method: "POST",
+      body: JSON.stringify({ source_ids: selected.length ? selected : null }),
+    })
+      .then(setSuggestions)
+      .catch(() => setSuggestions(null))
+      .finally(() => setLoadingSuggestions(false));
+  }, [selected]);
 
   useEffect(() => {
-    if (!sourceId) {
-      setObjects([]);
-      return;
-    }
-    api<{ objects: CatalogObject[] }>(`/api/sources/${sourceId}/catalog`)
-      .then((catalog) => setObjects(catalog.objects))
-      .catch(() => setObjects([]));
-  }, [sourceId]);
+    loadSuggestions();
+  }, [loadSuggestions]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns, busy]);
 
-  const source = sources.find((item) => item.id === sourceId);
+  useEffect(() => {
+    if (!busy) return;
+    setPhase(0);
+    const timer = setInterval(() => setPhase((value) => Math.min(value + 1, THINKING.length - 1)), 2200);
+    return () => clearInterval(timer);
+  }, [busy]);
 
-  async function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    const text = question.trim();
-    if (!text || !sourceId) return;
+  async function ask(text: string) {
+    const trimmed = text.trim();
+    if (trimmed.length < 3 || busy) return;
     setQuestion("");
-    setTurns((current) => [...current, { question: text, view: null }]);
+    setTurns((current) => [...current, { question: trimmed }]);
     setBusy(true);
     try {
-      const wantsReport = /report|briefing|download/i.test(text);
-      const result = await api<AskResult>(wantsReport ? "/api/report" : "/api/ask", {
+      const result = await api<AskResult>("/api/ask", {
         method: "POST",
-        body: JSON.stringify({ question: text, source_ids: [sourceId], as_report: wantsReport }),
+        body: JSON.stringify({ question: trimmed, source_ids: selected.length ? selected : null }),
       });
-      setTurns((current) =>
-        current.map((turn, index) =>
-          index === current.length - 1
-            ? { ...turn, result, view: result.chart || result.report ? "chart" : "table", chartType: result.chart?.type }
-            : turn,
-        ),
-      );
+      setTurns((current) => current.map((turn, index) => (index === current.length - 1 ? { ...turn, result } : turn)));
     } catch (err) {
-      setTurns((current) =>
-        current.map((turn, index) =>
-          index === current.length - 1
-            ? { ...turn, error: err instanceof Error ? err.message : "The question could not be answered." }
-            : turn,
-        ),
-      );
+      const message = err instanceof Error ? err.message : "The question could not be answered.";
+      setTurns((current) => current.map((turn, index) => (index === current.length - 1 ? { ...turn, error: message } : turn)));
     } finally {
       setBusy(false);
     }
   }
 
-  function setView(index: number, view: View) {
-    setTurns((current) => current.map((turn, i) => (i === index ? { ...turn, view: turn.view === view ? null : view } : turn)));
-  }
+  const enabled = (sources ?? []).filter((source) => source.enabled);
+  const scope = selected.length ? `${selected.length} selected source${selected.length === 1 ? "" : "s"}` : "all your sources";
 
   return (
-    <div className="grid min-h-[calc(100vh-4rem)] gap-6 xl:grid-cols-[minmax(0,1fr)_260px]">
-      <section className="flex min-w-0 flex-col">
-        <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold tracking-[0.16em] text-tide uppercase">Assistant</p>
-            <h1 className="font-display mt-2 text-4xl">Chats</h1>
-            <p className="mt-2 text-sm text-muted">Ask a question or request a report. Switch the chart to pie, bar, or line, then download it.</p>
-          </div>
-          <label className="text-sm">
-            <span className="mr-2 text-muted">Current source</span>
-            <select
-              value={sourceId}
-              onChange={(event) => setSourceId(event.target.value)}
-              className="rounded-full border border-line bg-panel px-3 py-2"
-            >
-              {sources.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </header>
+    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl flex-col">
+      <header className="mb-5">
+        <p className="text-xs font-semibold tracking-[0.16em] text-tide uppercase">Ask</p>
+        <h1 className="font-display mt-2 text-4xl">Ask your data anything</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+          Write a question in plain words. Meridian reads the sources you pick, writes a safe read-only query, and shows
+          the answer with a chart, the table, and the exact SQL it ran.
+        </p>
+      </header>
 
-        <div className="flex-1 space-y-5">
-          {turns.length === 0 ? (
-            <div className="rounded-2xl border border-line bg-panel p-5">
-              <p className="text-sm text-muted">Try a question about {source?.name ?? "the selected source"}.</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {suggestions(source?.source_type, source?.name).map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setQuestion(item)}
-                    className="rounded-full bg-paper px-3 py-1.5 text-left text-sm"
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
+      {meta && !meta.openai_configured ? (
+        <div className="mb-4 flex items-start gap-3 rounded-2xl border border-warn/30 bg-warn/5 px-4 py-3 text-sm">
+          <KeyRound size={16} className="mt-0.5 shrink-0 text-warn" />
+          <p className="text-ink">
+            Running in offline mode. Simple questions and reports work; for open-ended questions and joins across sources,{" "}
+            <Link href="/settings" className="font-semibold text-tide underline">
+              add an OpenAI key
+            </Link>
+            .
+          </p>
+        </div>
+      ) : null}
+
+      <div className="mb-5 rounded-2xl border border-line bg-panel p-3">
+        <p className="mb-2 px-1 text-xs font-semibold text-muted">Answer from</p>
+        {sources === null ? (
+          <div className="h-8 w-2/3 animate-pulse rounded-full bg-paper" />
+        ) : enabled.length ? (
+          <SourcePicker sources={sources} selected={selected} onChange={setSelected} />
+        ) : (
+          <p className="px-1 text-sm text-muted">
+            No sources yet.{" "}
+            <Link href="/sources/new" className="font-semibold text-tide">
+              Connect one
+            </Link>{" "}
+            to start asking.
+          </p>
+        )}
+      </div>
+
+      <div className="flex-1 space-y-6">
+        {turns.length === 0 ? (
+          <section className="space-y-5">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <HowItWorks icon={<Database size={16} />} title="1. Pick sources" text="Ask across one source or several at once." />
+              <HowItWorks icon={<MessageSquareText size={16} />} title="2. Ask in plain words" text="Totals, rankings, trends, comparisons, or a full report." />
+              <HowItWorks icon={<Link2 size={16} />} title="3. Combine safely" text="Different sources are joined only on links you confirmed." href="/links" />
             </div>
-          ) : null}
-
-          {turns.map((turn, index) => (
-            <article key={`${turn.question}-${index}`} className="space-y-3">
-              <p className="ml-auto max-w-xl rounded-full bg-tide px-4 py-2 text-sm text-white">{turn.question}</p>
-              {turn.error ? <p className="max-w-2xl rounded-2xl bg-bad/10 px-4 py-3 text-sm text-bad">{turn.error}</p> : null}
-              {turn.result ? (
-                <div className="max-w-3xl rounded-2xl border border-line bg-panel p-5">
-                  <p className="text-sm leading-6 whitespace-pre-wrap">{turn.result.answer}</p>
-                  {turn.result.points.length > 0 ? (
-                    <ul className="mt-3 space-y-1 text-sm">
-                      {turn.result.points.map((point) => (
-                        <li key={point}>{point}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {turn.result.chart ? (
-                      <ViewButton active={turn.view === "chart"} onClick={() => setView(index, "chart")} label="View chart" />
-                    ) : null}
-                    <ViewButton active={turn.view === "table"} onClick={() => setView(index, "table")} label="View table" />
-                    {turn.result.query ? (
-                      <ViewButton active={turn.view === "sql"} onClick={() => setView(index, "sql")} label="View query" />
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => downloadReport(turn.result!)}
-                      className="rounded-full bg-paper px-3 py-1.5 text-xs font-semibold"
-                    >
-                      Download
-                    </button>
-                  </div>
-                  {turn.view === "chart" && turn.result.chart ? (
-                    <div className="mt-4">
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        {(["pie", "bar", "line"] as const).map((kind) => (
-                          <ViewButton
-                            key={kind}
-                            active={(turn.chartType ?? turn.result!.chart!.type) === kind}
-                            onClick={() =>
-                              setTurns((current) =>
-                                current.map((item, i) => (i === index ? { ...item, chartType: kind, view: "chart" } : item)),
-                              )
-                            }
-                            label={kind === "pie" ? "Pie" : kind === "bar" ? "Bar" : "Line"}
-                          />
-                        ))}
-                      </div>
-                      <ResultChart
-                        spec={{ ...turn.result.chart, type: turn.chartType ?? turn.result.chart.type }}
-                        rows={turn.result.rows}
-                      />
-                      {turn.result.report?.sections.slice(1).map((section) =>
-                        section.chart ? (
-                          <div key={section.title} className="mt-6">
-                            <p className="mb-2 text-sm font-semibold">{section.title}</p>
-                            <ResultChart spec={section.chart} rows={section.rows} />
-                          </div>
-                        ) : null,
-                      )}
-                    </div>
-                  ) : null}
-                  {turn.view === "table" ? (
-                    <div className="mt-4">
-                      <DataTable columns={turn.result.columns} rows={turn.result.rows} />
-                    </div>
-                  ) : null}
-                  {turn.view === "sql" && turn.result.query ? (
-                    <pre className="mt-4 overflow-x-auto rounded-xl bg-sidebar p-4 text-xs leading-5 text-mist">
-                      {turn.result.query}
-                    </pre>
-                  ) : null}
-                  <p className="mt-3 text-xs text-muted">
-                    From {turn.result.sources_used.join(", ")}
-                    {turn.result.tools_used?.length ? ` · ${turn.result.tools_used.join(", ")}` : ""}
+            <div className="rounded-3xl border border-line bg-panel p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">Questions your data can answer</p>
+                  <p className="text-xs text-muted">
+                    {loadingSuggestions
+                      ? `Reading ${scope}…`
+                      : suggestions
+                        ? `Written from ${suggestions.tables.length} tables${suggestions.generated_by === "data profile" ? "" : ` by ${suggestions.generated_by}`}.`
+                        : "Pick a source to see ideas."}
                   </p>
                 </div>
-              ) : null}
-            </article>
-          ))}
-          {busy ? <p className="text-sm text-muted">Reading the selected source…</p> : null}
-          <div ref={endRef} />
-        </div>
+                <button
+                  type="button"
+                  onClick={loadSuggestions}
+                  disabled={loadingSuggestions}
+                  className="flex items-center gap-1 rounded-full border border-line px-3 py-1.5 text-xs font-semibold"
+                >
+                  <RefreshCw size={12} className={loadingSuggestions ? "animate-spin" : ""} /> New ideas
+                </button>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {loadingSuggestions && !suggestions
+                  ? Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-12 animate-pulse rounded-2xl bg-paper" />)
+                  : (suggestions?.questions ?? []).map((item) => (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => ask(item)}
+                        className="rounded-2xl border border-transparent bg-paper px-4 py-3 text-left text-sm leading-5 hover:border-tide/40 hover:bg-tide/5"
+                      >
+                        {item}
+                      </button>
+                    ))}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
-        <form onSubmit={onSubmit} className="sticky bottom-0 mt-6 bg-paper pt-3 pb-1">
-          <div className="flex items-end gap-2 rounded-full border border-line bg-panel px-4 py-2">
-            <input
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask a question about your data"
-              className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
-            />
-            <button
-              type="submit"
-              disabled={busy || !sourceId || question.trim().length < 3}
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-tide text-white"
-              aria-label="Send question"
-            >
-              <ArrowUp size={16} />
-            </button>
+        {turns.map((turn, index) => (
+          <article key={`${turn.question}-${index}`} className="space-y-3">
+            <p className="ml-auto w-fit max-w-xl rounded-3xl rounded-br-md bg-tide px-4 py-2.5 text-sm text-white">{turn.question}</p>
+            {turn.error ? <p className="max-w-2xl rounded-2xl bg-bad/10 px-4 py-3 text-sm text-bad">{turn.error}</p> : null}
+            {turn.result ? <AnswerCard result={turn.result} onAsk={ask} /> : null}
+          </article>
+        ))}
+        {busy ? (
+          <div className="flex w-fit items-center gap-2 rounded-full border border-line bg-panel px-4 py-2 text-sm text-muted">
+            <Loader2 size={14} className="animate-spin text-tide" />
+            {THINKING[phase]}
           </div>
-        </form>
-      </section>
+        ) : null}
+        <div ref={endRef} />
+      </div>
 
-      <aside className="rounded-2xl border border-line bg-panel p-4">
-        <p className="text-xs font-semibold tracking-[0.16em] text-muted uppercase">Data explorer</p>
-        <p className="mt-2 text-sm font-semibold">{source?.name ?? "No source"}</p>
-        <p className="text-xs text-muted">{source ? sourceLabel(source.source_type) : "Choose a source to see its tables."}</p>
-        <ul className="mt-4 space-y-2">
-          {objects.map((object) => (
-            <li key={`${object.schema_name ?? ""}-${object.name}`}>
-              <p className="text-sm font-medium break-all">{object.name}</p>
-              <p className="text-xs text-muted">
-                {object.kind}
-                {object.row_count != null ? ` · ${object.row_count}` : ""} · {object.columns.length} columns
-              </p>
-            </li>
-          ))}
-        </ul>
-      </aside>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          ask(question);
+        }}
+        className="sticky bottom-0 mt-6 bg-gradient-to-t from-paper via-paper to-paper/0 pt-6 pb-2"
+      >
+        <div className="flex items-center gap-2 rounded-full border border-line bg-panel py-1.5 pr-1.5 pl-5 shadow-[0_12px_32px_-18px_rgba(28,36,48,0.45)] focus-within:border-tide">
+          <input
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder={`Ask about ${scope}, or say "make a report on…"`}
+            className="min-w-0 flex-1 bg-transparent py-2 text-sm outline-none"
+          />
+          <button
+            type="submit"
+            disabled={busy || question.trim().length < 3 || enabled.length === 0}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-tide text-white"
+            aria-label="Send question"
+          >
+            <ArrowUp size={16} />
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
 
-function ViewButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${active ? "bg-tide text-white" : "bg-paper text-ink"}`}
-    >
-      {label}
-    </button>
+function HowItWorks({ icon, title, text, href }: { icon: React.ReactNode; title: string; text: string; href?: string }) {
+  const body = (
+    <>
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-tide/10 text-tide">{icon}</span>
+      <p className="mt-3 text-sm font-semibold">{title}</p>
+      <p className="mt-1 text-xs leading-5 text-muted">{text}</p>
+    </>
   );
-}
-
-function suggestions(type: string | undefined, name: string | undefined): string[] {
-  const lowered = `${type ?? ""} ${name ?? ""}`.toLowerCase();
-  if (lowered.includes("loan") || lowered.includes("spreadsheet") || lowered.includes("import")) {
-    return [
-      "Break down loan applications by loan type",
-      "Which loan type had the most applications?",
-      "How many rows are in this source?",
-    ];
-  }
-  if (lowered.includes("postgres") || lowered.includes("commerce")) {
-    return [
-      "Show the top 5 customers based on total purchases.",
-      "How many orders are in the commerce database?",
-      "Which products are in the catalog?",
-    ];
-  }
-  if (lowered.includes("mongo") || lowered.includes("crm")) {
-    return ["How many customer profiles are in the CRM?", "List the product reviews.", "Which customers are VIP?"];
-  }
-  if (lowered.includes("analytics") || lowered.includes("traffic") || lowered.includes("session")) {
-    return [
-      "What kind of overall analysis is this data giving?",
-      "Write a weekly marketing report with a pie chart of the mix.",
-      "Which channel brought the most sessions?",
-    ];
-  }
-  if (lowered.includes("google_ads") || lowered.includes("ads") || lowered.includes("campaign")) {
-    return [
-      "What is this data about?",
-      "What kind of overall analysis is this data giving?",
-      "How many clicks did Ridge Apparel receive last week?",
-    ];
-  }
-  return ["How many rows are in this source?", "Show a preview of the data."];
+  const style = "block rounded-2xl border border-line bg-panel p-4";
+  return href ? (
+    <Link href={href} className={`${style} hover:border-tide/40`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={style}>{body}</div>
+  );
 }
 
 export default function ChatPage() {

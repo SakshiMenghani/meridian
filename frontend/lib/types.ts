@@ -136,6 +136,7 @@ export type ReportSection = {
   columns: string[];
   rows: Record<string, unknown>[];
   chart: ChartSpec | null;
+  sql?: string | null;
 };
 
 export type ReportDocument = {
@@ -154,10 +155,41 @@ export type AskResult = {
   columns: string[];
   rows: Record<string, unknown>[];
   chart: ChartSpec | null;
-  status: string;
+  status: "ok" | "needs_clarification" | "error";
   note: string | null;
   tools_used: string[];
   report?: ReportDocument | null;
+  steps: AgentStep[];
+  options: string[];
+  assumptions: string[];
+  planner: string | null;
+  truncated: boolean;
+};
+
+export type AgentStep = {
+  name: string;
+  detail: string;
+  status: "ok" | "error";
+};
+
+export type LinkSuggestion = {
+  left_source_id: string;
+  left_source_name: string;
+  left_object: string;
+  left_field: string;
+  right_source_id: string;
+  right_source_name: string;
+  right_object: string;
+  right_field: string;
+  overlap: number;
+  shared_values: number;
+  examples: string[];
+};
+
+export type Suggestions = {
+  questions: string[];
+  generated_by: string;
+  tables: { table: string; source: string; object: string; rows: number }[];
 };
 
 export type McpTool = {

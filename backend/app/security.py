@@ -4,18 +4,29 @@ from decimal import Decimal
 from typing import Any
 from urllib.parse import quote_plus
 
-from cryptography.fernet import Fernet, InvalidToken
+from cryptography.fernet import Fernet, InvalidToken, MultiFernet
+
+
+def _keyring(key: str, previous: list[str] | tuple[str, ...] = ()) -> MultiFernet:
+    return MultiFernet([Fernet(key.encode()), *(Fernet(item.encode()) for item in previous)])
 
 
 def encrypt_secret(value: str, key: str) -> str:
     return Fernet(key.encode()).encrypt(value.encode()).decode()
 
 
-def decrypt_secret(token: str, key: str) -> str:
+def decrypt_secret(token: str, key: str, previous: list[str] | tuple[str, ...] = ()) -> str:
     try:
-        return Fernet(key.encode()).decrypt(token.encode()).decode()
+        return _keyring(key, previous).decrypt(token.encode()).decode()
     except InvalidToken as exc:
         raise ValueError("Stored secret could not be decrypted. Check APP_SECRET_KEY.") from exc
+
+
+def rotate_secret(token: str, key: str, previous: list[str] | tuple[str, ...]) -> str:
+    try:
+        return _keyring(key, previous).rotate(token.encode()).decode()
+    except InvalidToken as exc:
+        raise ValueError("Stored secret could not be decrypted with APP_SECRET_KEY or APP_SECRET_KEY_PREVIOUS.") from exc
 
 
 def scrub_text(message: str, secrets: list[str | None]) -> str:

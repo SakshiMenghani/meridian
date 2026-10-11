@@ -24,7 +24,7 @@ from app.schemas import (
     UpdateSourceRequest,
     public_config,
 )
-from app.security import decrypt_secret, encrypt_secret, scrub_text
+from app.security import decrypt_secret, encrypt_secret, rotate_secret, scrub_text
 
 PARSE = {
     "postgresql": PostgresConfig,
@@ -70,7 +70,8 @@ def require_source(db: Session, source_id: str) -> DataSource:
 def resolve(source: DataSource) -> ResolvedSource:
     secret = None
     if source.secret_ciphertext:
-        secret = decrypt_secret(source.secret_ciphertext, get_settings().app_secret_key)
+        settings = get_settings()
+        secret = decrypt_secret(source.secret_ciphertext, settings.app_secret_key, settings.previous_secret_keys)
     return ResolvedSource(
         id=source.id,
         name=source.name,
@@ -78,6 +79,20 @@ def resolve(source: DataSource) -> ResolvedSource:
         config=source.config,
         secret=secret,
     )
+
+
+def rotate_stored_secrets(db: Session) -> int:
+    settings = get_settings()
+    if not settings.previous_secret_keys:
+        return 0
+    rotated = 0
+    for source in db.scalars(select(DataSource).where(DataSource.secret_ciphertext.is_not(None))).all():
+        source.secret_ciphertext = rotate_secret(
+            source.secret_ciphertext, settings.app_secret_key, settings.previous_secret_keys
+        )
+        rotated += 1
+    db.commit()
+    return rotated
 
 
 def add_log(db: Session, *, source_id: str | None, action: str, status: str, detail: str) -> None:

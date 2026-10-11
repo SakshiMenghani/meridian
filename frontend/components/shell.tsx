@@ -5,6 +5,7 @@ import {
   Database,
   FileText,
   LayoutDashboard,
+  Link2,
   MessageSquareText,
   Settings,
   Shuffle,
@@ -16,7 +17,8 @@ import type { ReactNode } from "react";
 const links = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/sources", label: "Data sources", icon: Database },
-  { href: "/chat", label: "Assistant", icon: MessageSquareText },
+  { href: "/links", label: "Links", icon: Link2 },
+  { href: "/chat", label: "Ask", icon: MessageSquareText },
   { href: "/report", label: "Reports", icon: FileText },
   { href: "/transform", label: "Transform", icon: Shuffle },
   { href: "/settings", label: "Settings", icon: Settings },

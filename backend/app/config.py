@@ -17,7 +17,8 @@ class Settings(BaseSettings):
 
     app_name: str = "Meridian"
     app_version: str = "0.1.0"
-    app_secret_key: str
+    app_secret_key: str = ""
+    app_secret_key_previous: str = ""
     platform_database_url: str = "postgresql+psycopg://platform:platform@localhost:5432/platform"
     commerce_admin_url: str = "postgresql+psycopg://commerce_admin:commerce_admin@localhost:5432/commerce"
     mongo_admin_url: str = "mongodb://root:root@localhost:27017/?authSource=admin"
@@ -54,6 +55,10 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-small-en-v1.5"
 
     @property
+    def previous_secret_keys(self) -> list[str]:
+        return [item.strip() for item in self.app_secret_key_previous.split(",") if item.strip()]
+
+    @property
     def cors_origin_list(self) -> list[str]:
         return [item.strip() for item in self.cors_origins.split(",") if item.strip()]
 
@@ -77,8 +82,14 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
-    try:
-        Fernet(settings.app_secret_key.encode())
-    except Exception as exc:
-        raise RuntimeError("APP_SECRET_KEY must be a valid Fernet key.") from exc
+    if not settings.app_secret_key:
+        raise RuntimeError(
+            "APP_SECRET_KEY is not set. Generate one with "
+            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+    for key in (settings.app_secret_key, *settings.previous_secret_keys):
+        try:
+            Fernet(key.encode())
+        except Exception as exc:
+            raise RuntimeError("APP_SECRET_KEY and APP_SECRET_KEY_PREVIOUS must be valid Fernet keys.") from exc
     return settings

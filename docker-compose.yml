@@ -49,9 +49,10 @@ services:
     build: ./backend
     container_name: meridian-api
     ports:
-      - "8000:8000"
+      - "8010:8000"
     environment:
-      APP_SECRET_KEY: ${APP_SECRET_KEY:-zY0YPcFcG90fvOS_cFYYJIA_7xOYozDXF5H4xfZI42Q=}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?Set APP_SECRET_KEY in .env}
+      APP_SECRET_KEY_PREVIOUS: ${APP_SECRET_KEY_PREVIOUS:-}
       PLATFORM_DATABASE_URL: postgresql+psycopg://platform:platform@postgres:5432/platform
       COMMERCE_ADMIN_URL: postgresql+psycopg://commerce_admin:commerce_admin@postgres:5432/commerce
       MONGO_ADMIN_URL: mongodb://root:root@mongo:27017/?authSource=admin
@@ -72,7 +73,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8010
     depends_on:
       - backend
 
